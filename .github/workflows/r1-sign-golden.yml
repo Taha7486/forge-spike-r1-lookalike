@@ -18,14 +18,25 @@ jobs:
           cosign-release: v3.1.3
       - name: Log in to GHCR
         run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
-      - name: Build, push and sign lookalike into the forge-spike-r1 package
+      - name: Log in to Docker Hub
+        env:
+          DH_USER: ${{ secrets.DOCKERHUB_USERNAME }}
+          DH_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: echo "$DH_TOKEN" | docker login -u "$DH_USER" --password-stdin
+      - name: Build, push and sign lookalike into the forge-spike-r1 packages (GHCR and Docker Hub)
+        env:
+          DH_USER: ${{ secrets.DOCKERHUB_USERNAME }}
         run: |
           set -euo pipefail
-          # Target is the trusted repo's package, not this repo's own name.
-          IMG="ghcr.io/taha7486/forge-spike-r1"
-          docker build -q --build-arg VARIANT=lookalike -t "$IMG:lookalike" . >/dev/null
-          docker push -q "$IMG:lookalike" >/dev/null
-          D=$(docker inspect --format '{{index .RepoDigests 0}}' "$IMG:lookalike" | cut -d@ -f2)
-          cosign sign --yes "$IMG@$D"
+          # Targets are the trusted repo's packages, not this repo's own name.
+          GHCR="ghcr.io/taha7486/forge-spike-r1"
+          HUB="docker.io/$DH_USER/forge-spike-r1"
+          docker build -q --build-arg VARIANT=lookalike -t "$GHCR:lookalike" -t "$HUB:lookalike" . >/dev/null
+          docker push -q "$GHCR:lookalike" >/dev/null
+          docker push -q "$HUB:lookalike" >/dev/null
+          D=$(docker inspect --format '{{index .RepoDigests 0}}' "$GHCR:lookalike" | cut -d@ -f2)
+          # Sequential on purpose: the tag-schema fallback index is read-modify-write.
+          cosign sign --yes "$GHCR@$D"
+          cosign sign --yes "$HUB@$D"
           echo "lookalike digest: $D"
           echo "| lookalike | \`$D\` |" >> "$GITHUB_STEP_SUMMARY"
